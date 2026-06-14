@@ -13,3 +13,7 @@ export async function initiateAutopsy(subject) {
 export function createAgentStream(runId, agentId) {
   return new EventSource(`${BASE_URL}/api/stream/${runId}/${agentId}`)
 }
+
+export function createAutopsyStream(subject) {
+  return new EventSource(`${BASE_URL}/api/autopsy/stream?subject=${encodeURIComponent(subject)}`)
+}

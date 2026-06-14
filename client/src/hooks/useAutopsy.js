@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { initiateAutopsy, createAgentStream } from '../lib/api'
+import { createAutopsyStream } from '../lib/api'
 import { AGENT_IDS } from '../lib/constants'
 
 const initialAgentState = () => ({
@@ -30,21 +30,11 @@ const initialState = {
 export function useAutopsy() {
   const [state, setState] = useState(initialState)
   const statusRef = useRef(initialState.status)
-  const confidenceIntervals = useRef({})
-  const sparklineIntervals = useRef({})
+  const streamMetrics = useRef({})
 
   useEffect(() => {
     statusRef.current = state.status
   }, [state.status])
-
-  useEffect(() => {
-    const confidence = confidenceIntervals.current
-    const sparklines = sparklineIntervals.current
-    return () => {
-      Object.values(confidence).forEach(clearInterval)
-      Object.values(sparklines).forEach(clearInterval)
-    }
-  }, [])
 
   const addLog = useCallback((message, type = 'n') => {
     const now = new Date()
@@ -56,112 +46,74 @@ export function useAutopsy() {
     }))
   }, [])
 
-  const startConfidenceSim = useCallback((agentId) => {
-    clearInterval(confidenceIntervals.current[agentId])
-    let val = 20 + Math.random() * 20
-    const iv = setInterval(() => {
-      val = Math.min(95, val + Math.random() * 8 - 1)
-      setState(prev => ({
-        ...prev,
-        agents: {
-          ...prev.agents,
-          [agentId]: { ...prev.agents[agentId], confidence: Math.round(val) }
-        }
-      }))
-    }, 300)
-    confidenceIntervals.current[agentId] = iv
+  const getStreamConfidence = useCallback((metrics, done = false) => {
+    if (!metrics || metrics.chars === 0) return 0
+    const elapsedSeconds = Math.max(0.5, (Date.now() - metrics.startedAt) / 1000)
+    const charsPerSecond = metrics.chars / elapsedSeconds
+    const volumeScore = Math.min(50, metrics.chars / 10)
+    const chunkScore = Math.min(25, metrics.chunks * 1.4)
+    const throughputScore = Math.min(20, charsPerSecond / 5)
+    const doneBonus = done ? 5 : 0
+    return Math.min(100, Math.round(volumeScore + chunkScore + throughputScore + doneBonus))
   }, [])
 
-  const stopConfidenceSim = useCallback((agentId, finalVal) => {
-    clearInterval(confidenceIntervals.current[agentId])
+  const resetStreamMetrics = useCallback(() => {
+    streamMetrics.current = {}
+    ;[...AGENT_IDS, 'verdict'].forEach(agentId => {
+      streamMetrics.current[agentId] = {
+        startedAt: Date.now(),
+        chunks: 0,
+        chars: 0,
+        output: '',
+        sparklineData: Array(20).fill(0)
+      }
+    })
+  }, [])
+
+  const applyStreamToken = useCallback((agentId, token) => {
+    const metrics = streamMetrics.current[agentId]
+    if (!metrics) return
+    metrics.output += token
+    metrics.chunks += 1
+    metrics.chars += token.length
+    metrics.sparklineData = [...metrics.sparklineData.slice(1), Math.max(1, Math.min(10, token.length))]
+    const confidence = getStreamConfidence(metrics)
+
     setState(prev => ({
       ...prev,
       agents: {
         ...prev.agents,
-        [agentId]: { ...prev.agents[agentId], confidence: Math.round(finalVal) }
+        [agentId]: {
+          ...prev.agents[agentId],
+          status: 'thinking',
+          output: metrics.output,
+          confidence,
+          sparklineData: metrics.sparklineData
+        }
       }
     }))
-  }, [])
+  }, [getStreamConfidence])
 
-  const startSparklineSim = useCallback((agentId) => {
-    clearInterval(sparklineIntervals.current[agentId])
-    const iv = setInterval(() => {
-      const val = 3 + Math.random() * 6
-      setState(prev => {
-        const current = prev.agents[agentId].sparklineData
-        const next = [...current.slice(1), val]
-        return {
-          ...prev,
-          agents: {
-            ...prev.agents,
-            [agentId]: { ...prev.agents[agentId], sparklineData: next }
-          }
-        }
-      })
-    }, 300)
-    sparklineIntervals.current[agentId] = iv
-  }, [])
+  const finishStreamAgent = useCallback((agentId) => {
+    const metrics = streamMetrics.current[agentId]
+    const output = metrics?.output || ''
+    const confidence = getStreamConfidence(metrics, true)
 
-  const stopSparklineSim = useCallback((agentId) => {
-    clearInterval(sparklineIntervals.current[agentId])
-  }, [])
-
-  const streamAgent = useCallback((runId, agentId) => {
-    return new Promise((resolve) => {
-      setState(prev => ({
-        ...prev,
-        agents: {
-          ...prev.agents,
-          [agentId]: { ...prev.agents[agentId], status: 'thinking', output: '' }
-        }
-      }))
-      startConfidenceSim(agentId)
-      startSparklineSim(agentId)
-
-      const source = createAgentStream(runId, agentId)
-      let fullOutput = ''
-
-      source.onmessage = (e) => {
-        const data = JSON.parse(e.data)
-        if (data.done) {
-          source.close()
-          stopConfidenceSim(agentId, 75 + Math.random() * 20)
-          stopSparklineSim(agentId)
-          setState(prev => ({
-            ...prev,
-            agents: {
-              ...prev.agents,
-              [agentId]: { ...prev.agents[agentId], status: 'done', output: fullOutput }
-            }
-          }))
-          resolve(fullOutput)
-        } else {
-          fullOutput += data.token
-          setState(prev => ({
-            ...prev,
-            agents: {
-              ...prev.agents,
-              [agentId]: { ...prev.agents[agentId], output: fullOutput }
-            }
-          }))
+    setState(prev => ({
+      ...prev,
+      agents: {
+        ...prev.agents,
+        [agentId]: {
+          ...prev.agents[agentId],
+          status: 'done',
+          output,
+          confidence
         }
       }
+    }))
 
-      source.onerror = () => {
-        source.close()
-        stopConfidenceSim(agentId, 60)
-        stopSparklineSim(agentId)
-        setState(prev => ({
-          ...prev,
-          agents: {
-            ...prev.agents,
-            [agentId]: { ...prev.agents[agentId], status: 'done', output: '[Analysis unavailable]' }
-          }
-        }))
-        resolve('[Analysis unavailable]')
-      }
-    })
-  }, [startConfidenceSim, stopConfidenceSim, startSparklineSim, stopSparklineSim])
+    return output
+  }, [getStreamConfidence])
 
   const parseFaultScores = (text) => {
     const match = text.match(/FAULT_SCORES:\s*strategy=(\d+(?:\.\d+)?),execution=(\d+(?:\.\d+)?),finance=(\d+(?:\.\d+)?),opportunity=(\d+(?:\.\d+)?),leadership=(\d+(?:\.\d+)?),market=(\d+(?:\.\d+)?)/)
@@ -177,52 +129,94 @@ export function useAutopsy() {
   const runAutopsy = useCallback(async (subject) => {
     if (statusRef.current === 'running') return
     statusRef.current = 'running'
+    resetStreamMetrics()
     setState({ ...initialState, subject, status: 'running', pipelineStage: 1 })
     addLog(`Autopsy initiated: "${subject.slice(0, 35)}${subject.length > 35 ? '...' : ''}"`, 'r')
 
-    try {
-      const { run_id } = await initiateAutopsy(subject)
-      setState(prev => ({ ...prev, runId: run_id }))
+    await new Promise((resolve) => {
+      const runId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
+      const source = createAutopsyStream(subject)
+      const completedAgents = new Set()
+
+      setState(prev => ({ ...prev, runId }))
       addLog('Panel assembling - 4 agents standing by', 'a')
 
-      await Promise.all(
-        AGENT_IDS.map(id => {
-          addLog(`${id.replace('_', ' ')} is analyzing`, 'a')
-          return streamAgent(run_id, id)
-        })
-      )
+      AGENT_IDS.forEach(id => {
+        addLog(`${id.replace('_', ' ')} is analyzing`, 'a')
+        setState(prev => ({
+          ...prev,
+          agents: {
+            ...prev.agents,
+            [id]: { ...prev.agents[id], status: 'thinking', output: '', confidence: 0, sparklineData: Array(20).fill(0) }
+          }
+        }))
+      })
 
-      AGENT_IDS.forEach(id => addLog(`${id.replace('_', ' ')} sealed analysis`, 'g'))
-      addLog('All agents complete - synthesizing verdict', 'r')
-      setState(prev => ({ ...prev, pipelineStage: 2 }))
+      source.onmessage = (e) => {
+        const data = JSON.parse(e.data)
+        const agentId = data.agent_id
 
-      const verdictOutput = await streamAgent(run_id, 'verdict')
-      const faultScores = parseFaultScores(verdictOutput)
-      const rootCause = parseRootCause(verdictOutput)
-      const cleanVerdict = verdictOutput
-        .replace(/ROOT_CAUSE:.*$/ms, '')
-        .replace(/FAULT_SCORES:.*$/ms, '')
-        .trim()
+        if (agentId === '__run__' && data.done) {
+          source.close()
+          const verdictOutput = streamMetrics.current.verdict?.output || ''
+          const faultScores = parseFaultScores(verdictOutput)
+          const rootCause = parseRootCause(verdictOutput)
+          const cleanVerdict = verdictOutput
+            .replace(/ROOT_CAUSE:.*$/ms, '')
+            .replace(/FAULT_SCORES:.*$/ms, '')
+            .trim()
 
-      setState(prev => ({
-        ...prev,
-        status: 'complete',
-        pipelineStage: 3,
-        faultScores,
-        rootCause,
-        agents: {
-          ...prev.agents,
-          verdict: { ...prev.agents.verdict, output: cleanVerdict }
+          setState(prev => ({
+            ...prev,
+            status: 'complete',
+            pipelineStage: 3,
+            faultScores,
+            rootCause,
+            agents: {
+              ...prev.agents,
+              verdict: { ...prev.agents.verdict, output: cleanVerdict, status: 'done' }
+            }
+          }))
+          statusRef.current = 'complete'
+          addLog('Verdict sealed', 'g')
+          resolve()
+          return
         }
-      }))
-      statusRef.current = 'complete'
-      addLog('Verdict sealed', 'g')
-    } catch (err) {
-      addLog('Error during autopsy - check backend', 'r')
-      setState(prev => ({ ...prev, status: 'idle' }))
-      statusRef.current = 'idle'
-    }
-  }, [streamAgent, addLog])
+
+        if (![...AGENT_IDS, 'verdict'].includes(agentId)) return
+
+        if (data.done) {
+          finishStreamAgent(agentId)
+          completedAgents.add(agentId)
+          if (AGENT_IDS.includes(agentId)) {
+            addLog(`${agentId.replace('_', ' ')} sealed analysis`, 'g')
+            if (AGENT_IDS.every(id => completedAgents.has(id))) {
+              addLog('All agents complete - synthesizing verdict', 'r')
+              setState(prev => ({
+                ...prev,
+                pipelineStage: 2,
+                agents: {
+                  ...prev.agents,
+                  verdict: { ...prev.agents.verdict, status: 'thinking', output: '', confidence: 0, sparklineData: Array(20).fill(0) }
+                }
+              }))
+            }
+          }
+          return
+        }
+
+        applyStreamToken(agentId, data.token || '')
+      }
+
+      source.onerror = () => {
+        source.close()
+        addLog('Error during autopsy - check backend', 'r')
+        setState(prev => ({ ...prev, status: 'idle' }))
+        statusRef.current = 'idle'
+        resolve()
+      }
+    })
+  }, [addLog, applyStreamToken, finishStreamAgent, resetStreamMetrics])
 
   return { state, runAutopsy }
 }

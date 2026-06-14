@@ -92,6 +92,79 @@ async def run_agent(run_id: str, agent_id: str, prompt: str) -> str:
     return outputs[run_id][agent_id]
 
 
+async def stream_prompt_to_event_queue(
+    event_queue: asyncio.Queue[dict[str, Any]],
+    agent_id: str,
+    prompt: str,
+) -> str:
+    output = ""
+    llm = make_llm()
+
+    try:
+        async for chunk in llm.astream(prompt):
+            token = chunk.content or ""
+            if token:
+                output += token
+                await event_queue.put({"agent_id": agent_id, "token": token, "done": False})
+    except Exception as exc:
+        token = f"[{describe_openai_error(exc)}]"
+        output += token
+        await event_queue.put({"agent_id": agent_id, "token": token, "done": False})
+    finally:
+        await event_queue.put({"agent_id": agent_id, "token": "", "done": True})
+
+    return output
+
+
+async def stream_autopsy_events(subject: str):
+    event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+    panel_prompts = {
+        "strategist": strategist.build_prompt(subject),
+        "operator": operator.build_prompt(subject),
+        "finance": finance.build_prompt(subject),
+        "devils_advocate": devils_advocate.build_prompt(subject),
+    }
+
+    panel_tasks = {
+        agent_id: asyncio.create_task(stream_prompt_to_event_queue(event_queue, agent_id, prompt))
+        for agent_id, prompt in panel_prompts.items()
+    }
+
+    async def run_verdict_after_panel() -> None:
+        strategist_output, operator_output, finance_output, devils_advocate_output = await asyncio.gather(
+            panel_tasks["strategist"],
+            panel_tasks["operator"],
+            panel_tasks["finance"],
+            panel_tasks["devils_advocate"],
+        )
+
+        verdict_prompt = verdict.build_prompt(
+            subject,
+            strategist_output,
+            operator_output,
+            finance_output,
+            devils_advocate_output,
+        )
+        await stream_prompt_to_event_queue(event_queue, "verdict", verdict_prompt)
+        await event_queue.put({"agent_id": "__run__", "token": "", "done": True})
+
+    verdict_task = asyncio.create_task(run_verdict_after_panel())
+
+    try:
+        while True:
+            event = await event_queue.get()
+            yield event
+            if event.get("agent_id") == "__run__" and event.get("done"):
+                break
+    finally:
+        for task in panel_tasks.values():
+            if not task.done():
+                task.cancel()
+        if not verdict_task.done():
+            verdict_task.cancel()
+
+
 async def run_autopsy(subject: str, run_id: str) -> None:
     if run_id not in statuses:
         initialize_run(run_id, subject)

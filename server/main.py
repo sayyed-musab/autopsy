@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from orchestrator import AGENT_IDS, get_queue, get_status, initialize_run, run_autopsy
+from orchestrator import AGENT_IDS, get_queue, get_status, initialize_run, run_autopsy, stream_autopsy_events
 
 load_dotenv()
 
@@ -47,6 +47,29 @@ async def start_autopsy(payload: AutopsyRequest) -> dict[str, str]:
     initialize_run(run_id, subject)
     asyncio.create_task(run_autopsy(subject, run_id))
     return {"run_id": run_id}
+
+
+@app.get("/api/autopsy/stream")
+async def stream_autopsy(subject: str) -> StreamingResponse:
+    subject = subject.strip()
+    if not subject:
+        raise HTTPException(status_code=422, detail="subject is required")
+    if len(subject) > 500:
+        raise HTTPException(status_code=422, detail="subject must be 500 characters or fewer")
+
+    async def event_generator():
+        async for event in stream_autopsy_events(subject):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/status/{run_id}")
