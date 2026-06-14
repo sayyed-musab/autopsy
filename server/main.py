@@ -2,7 +2,9 @@ import asyncio
 import json
 import uuid
 from typing import Literal
+import os
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -10,11 +12,13 @@ from pydantic import BaseModel, Field
 
 from orchestrator import AGENT_IDS, get_queue, get_status, initialize_run, run_autopsy
 
+load_dotenv()
+
 app = FastAPI(title="AUTOPSY API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
