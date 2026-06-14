@@ -1,36 +1,153 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# AUTOPSY
 
-## Getting Started
+AUTOPSY is a multi-agent AI failure analysis system. It lets a user enter a failed startup, product, company, or business decision, then streams a panel-style post-mortem from four specialist agents and one final verdict agent.
 
-First, run the development server:
+The app is split into:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- `client` - Next.js 14 App Router frontend, JavaScript only.
+- `server` - FastAPI backend with LangChain + OpenAI streaming orchestration.
+
+## What It Does
+
+1. The user enters a subject, such as `WeWork IPO failure`.
+2. The frontend calls `POST /api/autopsy`.
+3. The backend creates a `run_id`, initializes in-memory queues, and starts the analysis in the background.
+4. Four panel agents run in parallel:
+   - Dr. Kiran - strategy and market timing
+   - Marcus - execution and operations
+   - Ghost - finance and unit economics
+   - Vex - contrarian opportunity analysis
+5. The frontend opens one `EventSource` stream per agent and renders token-by-token output.
+6. After the four panel agents finish, the backend runs the Verdict Agent.
+7. The verdict stream includes `ROOT_CAUSE` and `FAULT_SCORES`; the frontend parses those into the root-cause panel and radar chart.
+
+## Repository Map
+
+```text
+D:\Codex Pune
+├── README.md
+├── docs
+│   ├── architecture.md
+│   ├── backend.md
+│   ├── frontend.md
+│   ├── api.md
+│   ├── development.md
+│   └── troubleshooting.md
+├── client
+│   ├── README.md
+│   ├── package.json
+│   └── src
+│       ├── app
+│       ├── components
+│       ├── hooks
+│       └── lib
+└── server
+    ├── README.md
+    ├── .env
+    ├── requirements.txt
+    ├── main.py
+    ├── orchestrator.py
+    └── agents
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Requirements
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+- Node.js 18+
+- Python 3.11+
+- OpenAI API key
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment
 
-## Learn More
+Create or update `server/.env`:
 
-To learn more about Next.js, take a look at the following resources:
+```env
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4o-mini
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Do not commit real API keys.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Install
 
-## Deploy on Vercel
+Frontend:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```powershell
+cd "D:\Codex Pune\client"
+npm install
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Backend:
+
+```powershell
+cd "D:\Codex Pune\server"
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+If the virtual environment does not have `pip`:
+
+```powershell
+cd "D:\Codex Pune\server"
+.\.venv\Scripts\python.exe -m ensurepip --upgrade
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+## Run
+
+Start the backend:
+
+```powershell
+cd "D:\Codex Pune\server"
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Start the frontend:
+
+```powershell
+cd "D:\Codex Pune\client"
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+## Verification
+
+Frontend:
+
+```powershell
+cd "D:\Codex Pune\client"
+npm run lint
+npm run build
+```
+
+Backend:
+
+```powershell
+cd "D:\Codex Pune\server"
+.\.venv\Scripts\python.exe -m py_compile main.py orchestrator.py agents\strategist.py agents\operator.py agents\finance.py agents\devils_advocate.py agents\verdict.py
+```
+
+Health check:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/health"
+```
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Backend](docs/backend.md)
+- [Frontend](docs/frontend.md)
+- [API](docs/api.md)
+- [Development Guide](docs/development.md)
+- [Troubleshooting](docs/troubleshooting.md)
+
+## Current Notes
+
+- The frontend is JavaScript-only. There are no `.tsx` or `.ts` source files in `client/src`.
+- Streaming is implemented with browser `EventSource` and backend Server-Sent Events.
+- Runtime state is in memory only. Restarting the backend clears active runs.
+- The app is designed for local development with the frontend on `localhost:3000` and backend on `127.0.0.1:8000`.

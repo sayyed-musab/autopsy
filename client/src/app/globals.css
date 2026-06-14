@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
+@import "tailwindcss";
+
+:root {
+  --bg: #080810;
+  --surface: #0D0D18;
+  --card: #11111E;
+  --border: #1C1C2E;
+  --border2: #2A2A40;
+  --red: #C8391A;
+  --red2: #FF4D1F;
+  --red-dim: rgba(200,57,26,0.1);
+  --red-glow: rgba(200,57,26,0.2);
+  --green: #16A34A;
+  --green-dim: rgba(22,163,74,0.12);
+  --amber: #D97706;
+  --amber-dim: rgba(217,119,6,0.12);
+  --text: #EEEEF5;
+  --muted: #52526A;
+  --muted2: #8888A8;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', sans-serif; }
+button, textarea { font: inherit; }
+button:focus-visible, textarea:focus-visible { outline: 1px solid var(--red2); outline-offset: 2px; }

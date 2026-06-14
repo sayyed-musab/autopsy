@@ -1,8 +1,40 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# AUTOPSY repo ignore file
+# Covers both client/ Next.js and server/ FastAPI Python artifacts.
 
-# dependencies
-/node_modules
-/.pnp
+# ---------------------------------------------------------------------------
+# Secrets and environment files
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+client/.env
+client/.env.*
+server/.env
+server/.env.*
+*.pem
+*.key
+*.cert
+*.crt
+
+# ---------------------------------------------------------------------------
+# Node / Next.js frontend
+# ---------------------------------------------------------------------------
+node_modules/
+client/node_modules/
+
+.next/
+client/.next/
+out/
+client/out/
+build/
+client/build/
+dist/
+client/dist/
+
+.vercel/
+client/.vercel/
+
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -10,32 +42,97 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
+# TypeScript/Next generated files, kept ignored even though this app is JS-only.
 *.tsbuildinfo
 next-env.d.ts
+client/next-env.d.ts
+
+# ---------------------------------------------------------------------------
+# Python / FastAPI backend
+# ---------------------------------------------------------------------------
+__pycache__/
+**/__pycache__/
+*/__pycache__/
+*.py[cod]
+**/*.py[cod]
+*$py.class
+
+.venv/
+venv/
+env/
+ENV/
+server/.venv/
+server/venv/
+
+.python-version
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+eggs/
+wheels/
+share/python-wheels/
+
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pyre/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# ---------------------------------------------------------------------------
+# Test, coverage, and cache output
+# ---------------------------------------------------------------------------
+coverage/
+client/coverage/
+server/coverage/
+.cache/
+.parcel-cache/
+.eslintcache
+
+# ---------------------------------------------------------------------------
+# Logs and runtime files
+# ---------------------------------------------------------------------------
+logs/
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# ---------------------------------------------------------------------------
+# OS and editor files
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---------------------------------------------------------------------------
+# Local databases and generated data
+# ---------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# ---------------------------------------------------------------------------
+# Temporary files
+# ---------------------------------------------------------------------------
+tmp/
+temp/
+*.tmp
+*.temp
